@@ -4,7 +4,9 @@ import java.io.*;
 public class Main {
     public static void main(String[] args) throws Exception {
         Scanner scanner = new Scanner(System.in);
-        Set<String> builtins = Set.of("exit", "echo", "type", "pwd");
+        Set<String> builtins = Set.of("exit", "echo", "type", "pwd", "cd");
+
+        File currentDirectory = new File(System.getProperty("user.dir"));
 
         while (true) {
             System.out.print("$ ");
@@ -49,7 +51,20 @@ public class Main {
                 }
             }
             else if (command.equals("pwd")) {
-                System.out.println(System.getProperty("user.dir"));
+                System.out.println(currentDirectory.getAbsolutePath());
+            }
+            else if (command.equals("cd")) {
+                if (inputArgs.length < 2) {
+                    continue;
+                }
+
+                File newDir = new File(inputArgs[1]);
+
+                if (newDir.exists() && newDir.isDirectory()) {
+                    currentDirectory = newDir.getAbsoluteFile();
+                } else {
+                    System.out.println("cd: " + inputArgs[1] + ": No such file or directory");
+                }
             }
             else {
                 String path = getPath(command);
@@ -57,6 +72,7 @@ public class Main {
                 if (path != null) {
                     try {
                         ProcessBuilder pb = new ProcessBuilder(inputArgs);
+                        pb.directory(currentDirectory);
                         pb.inheritIO();
 
                         Process process = pb.start();
