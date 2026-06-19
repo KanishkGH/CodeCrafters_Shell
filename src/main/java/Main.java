@@ -15,20 +15,27 @@ public class Main {
                 break;
             }
 
-            String input = scanner.nextLine().trim();
+            String input = scanner.nextLine();
 
-            if (input.isEmpty()) {
+            if (input.trim().isEmpty()) {
                 continue;
             }
 
-            String[] inputArgs = input.split("\\s+");
+            List<String> tokens = parseInput(input);
+            String[] inputArgs = tokens.toArray(new String[0]);
+
+            if (inputArgs.length == 0) {
+                continue;
+            }
+
             String command = inputArgs[0];
 
             if (command.equals("exit")) {
                 System.exit(0);
             }
             else if (command.equals("echo")) {
-                String[] echoArgs = Arrays.copyOfRange(inputArgs, 1, inputArgs.length);
+                String[] echoArgs =
+                        Arrays.copyOfRange(inputArgs, 1, inputArgs.length);
                 System.out.println(String.join(" ", echoArgs));
             }
             else if (command.equals("type")) {
@@ -77,13 +84,11 @@ public class Main {
                         currentDirectory = newDir;
                     } else {
                         System.out.println(
-                            "cd: " + inputArgs[1] + ": No such file or directory"
-                        );
+                                "cd: " + inputArgs[1] + ": No such file or directory");
                     }
                 } catch (IOException e) {
                     System.out.println(
-                        "cd: " + inputArgs[1] + ": No such file or directory"
-                    );
+                            "cd: " + inputArgs[1] + ": No such file or directory");
                 }
             }
             else {
@@ -99,14 +104,44 @@ public class Main {
                         process.waitFor();
                     } catch (Exception e) {
                         System.out.println(
-                            "Error executing command: " + e.getMessage()
-                        );
+                                "Error executing command: " + e.getMessage());
                     }
                 } else {
                     System.out.println(command + ": command not found");
                 }
             }
         }
+    }
+
+    private static List<String> parseInput(String input) {
+        List<String> tokens = new ArrayList<>();
+        StringBuilder current = new StringBuilder();
+
+        boolean inSingleQuotes = false;
+
+        for (int i = 0; i < input.length(); i++) {
+            char c = input.charAt(i);
+
+            if (c == '\'') {
+                inSingleQuotes = !inSingleQuotes;
+                continue;
+            }
+
+            if (Character.isWhitespace(c) && !inSingleQuotes) {
+                if (current.length() > 0) {
+                    tokens.add(current.toString());
+                    current.setLength(0);
+                }
+            } else {
+                current.append(c);
+            }
+        }
+
+        if (current.length() > 0) {
+            tokens.add(current.toString());
+        }
+
+        return tokens;
     }
 
     private static String getPath(String command) {
@@ -117,9 +152,9 @@ public class Main {
         }
 
         String delimiter =
-            System.getProperty("os.name").toLowerCase().contains("win")
-                ? ";"
-                : ":";
+                System.getProperty("os.name").toLowerCase().contains("win")
+                        ? ";"
+                        : ":";
 
         String[] directories = pathEnv.split(delimiter);
 
