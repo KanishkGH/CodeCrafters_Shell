@@ -1,3 +1,4 @@
+import java.io.File;
 import java.util.Scanner;
 
 public class Main {
@@ -28,9 +29,28 @@ public class Main {
 
                 if (cmd.equals("echo") || cmd.equals("exit") || cmd.equals("type")) {
                     System.out.println(cmd + " is a shell builtin");
-                } else {
+                    continue;
+                }
+
+                String pathEnv = System.getenv("PATH");
+                String[] paths = pathEnv.split(File.pathSeparator);
+
+                boolean found = false;
+
+                for (String dir : paths) {
+                    File file = new File(dir, cmd);
+
+                    if (file.exists() && file.isFile() && file.canExecute()) {
+                        System.out.println(cmd + " is " + file.getAbsolutePath());
+                        found = true;
+                        break;
+                    }
+                }
+
+                if (!found) {
                     System.out.println(cmd + ": not found");
                 }
+
                 continue;
             }
 
