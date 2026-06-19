@@ -60,9 +60,13 @@ public class Main {
 
                 File newDir;
 
-                if (new File(inputArgs[1]).isAbsolute()) {
+                if (inputArgs[1].equals("~")) {
+                    newDir = new File(System.getenv("HOME"));
+                }
+                else if (new File(inputArgs[1]).isAbsolute()) {
                     newDir = new File(inputArgs[1]);
-                } else {
+                }
+                else {
                     newDir = new File(currentDirectory, inputArgs[1]);
                 }
 
