@@ -14,6 +14,10 @@ public class Main {
 
             String command = scanner.nextLine();
 
+            if (command.equals("exit")) {
+                break;
+            }
+
             System.out.println(command + ": command not found");
         }
     }
