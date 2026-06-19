@@ -4,11 +4,16 @@ public class Main {
     public static void main(String[] args) {
         Scanner scanner = new Scanner(System.in);
 
-        System.out.print("$ ");
-        System.out.flush();
+        while (true) {
+            System.out.print("$ ");
+            System.out.flush();
 
-        if (scanner.hasNextLine()) {
+            if (!scanner.hasNextLine()) {
+                break;
+            }
+
             String command = scanner.nextLine();
+
             System.out.println(command + ": command not found");
         }
     }
