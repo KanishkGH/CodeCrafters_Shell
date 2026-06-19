@@ -51,19 +51,35 @@ public class Main {
                 }
             }
             else if (command.equals("pwd")) {
-                System.out.println(currentDirectory.getAbsolutePath());
+                System.out.println(currentDirectory.getCanonicalPath());
             }
             else if (command.equals("cd")) {
                 if (inputArgs.length < 2) {
                     continue;
                 }
 
-                File newDir = new File(inputArgs[1]);
+                File newDir;
 
-                if (newDir.exists() && newDir.isDirectory()) {
-                    currentDirectory = newDir.getAbsoluteFile();
+                if (new File(inputArgs[1]).isAbsolute()) {
+                    newDir = new File(inputArgs[1]);
                 } else {
-                    System.out.println("cd: " + inputArgs[1] + ": No such file or directory");
+                    newDir = new File(currentDirectory, inputArgs[1]);
+                }
+
+                try {
+                    newDir = newDir.getCanonicalFile();
+
+                    if (newDir.exists() && newDir.isDirectory()) {
+                        currentDirectory = newDir;
+                    } else {
+                        System.out.println(
+                            "cd: " + inputArgs[1] + ": No such file or directory"
+                        );
+                    }
+                } catch (IOException e) {
+                    System.out.println(
+                        "cd: " + inputArgs[1] + ": No such file or directory"
+                    );
                 }
             }
             else {
@@ -78,7 +94,9 @@ public class Main {
                         Process process = pb.start();
                         process.waitFor();
                     } catch (Exception e) {
-                        System.out.println("Error executing command: " + e.getMessage());
+                        System.out.println(
+                            "Error executing command: " + e.getMessage()
+                        );
                     }
                 } else {
                     System.out.println(command + ": command not found");
