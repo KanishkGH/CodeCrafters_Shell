@@ -1,8 +1,24 @@
-import java.io.File;
-import java.util.Scanner;
+import java.io.*;
+import java.util.*;
 
 public class Main {
-    public static void main(String[] args) {
+
+    private static String findExecutable(String command) {
+        String pathEnv = System.getenv("PATH");
+        String[] paths = pathEnv.split(File.pathSeparator);
+
+        for (String dir : paths) {
+            File file = new File(dir, command);
+
+            if (file.exists() && file.isFile() && file.canExecute()) {
+                return file.getAbsolutePath();
+            }
+        }
+
+        return null;
+    }
+
+    public static void main(String[] args) throws Exception {
         Scanner scanner = new Scanner(System.in);
 
         while (true) {
@@ -13,48 +29,61 @@ public class Main {
                 break;
             }
 
-            String command = scanner.nextLine();
+            String input = scanner.nextLine();
 
-            if (command.equals("exit")) {
+            if (input.equals("exit")) {
                 break;
             }
 
-            if (command.startsWith("echo ")) {
-                System.out.println(command.substring(5));
+            if (input.startsWith("echo ")) {
+                System.out.println(input.substring(5));
                 continue;
             }
 
-            if (command.startsWith("type ")) {
-                String cmd = command.substring(5);
+            if (input.startsWith("type ")) {
+                String cmd = input.substring(5);
 
                 if (cmd.equals("echo") || cmd.equals("exit") || cmd.equals("type")) {
                     System.out.println(cmd + " is a shell builtin");
                     continue;
                 }
 
-                String pathEnv = System.getenv("PATH");
-                String[] paths = pathEnv.split(File.pathSeparator);
+                String executable = findExecutable(cmd);
 
-                boolean found = false;
-
-                for (String dir : paths) {
-                    File file = new File(dir, cmd);
-
-                    if (file.exists() && file.isFile() && file.canExecute()) {
-                        System.out.println(cmd + " is " + file.getAbsolutePath());
-                        found = true;
-                        break;
-                    }
-                }
-
-                if (!found) {
+                if (executable != null) {
+                    System.out.println(cmd + " is " + executable);
+                } else {
                     System.out.println(cmd + ": not found");
                 }
 
                 continue;
             }
 
-            System.out.println(command + ": command not found");
+            String[] parts = input.split(" ");
+            String executable = findExecutable(parts[0]);
+
+            if (executable != null) {
+                List<String> command = new ArrayList<>();
+                command.add(executable);
+                command.addAll(Arrays.asList(parts).subList(1, parts.length));
+
+                Process process = new ProcessBuilder(command)
+                        .redirectErrorStream(true)
+                        .start();
+
+                try (BufferedReader reader = new BufferedReader(
+                        new InputStreamReader(process.getInputStream()))) {
+
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        System.out.println(line);
+                    }
+                }
+
+                process.waitFor();
+            } else {
+                System.out.println(input + ": command not found");
+            }
         }
     }
 }
