@@ -1,89 +1,89 @@
-import java.io.*;
 import java.util.*;
+import java.io.*;
 
 public class Main {
+    public static void main(String[] args) throws Exception {
+        Scanner scanner = new Scanner(System.in);
+        Set<String> builtins = Set.of("exit", "echo", "type");
 
-    private static String findExecutable(String command) {
+        while (true) {
+            System.out.print("$ ");
+            if (!scanner.hasNextLine()) {
+                break;
+            }
+            
+            String input = scanner.nextLine().trim();
+            if (input.isEmpty()) {
+                continue;
+            }
+
+            // Split the input into command and arguments
+            String[] inputArgs = input.split("\\s+");
+            String command = inputArgs[0];
+
+            // 1. Handle "exit"
+            if (command.equals("exit")) {
+                System.exit(0);
+            } 
+            // 2. Handle "echo"
+            else if (command.equals("echo")) {
+                String[] echoArgs = Arrays.copyOfRange(inputArgs, 1, inputArgs.length);
+                System.out.println(String.join(" ", echoArgs));
+            } 
+            // 3. Handle "type"
+            else if (command.equals("type")) {
+                if (inputArgs.length < 2) continue;
+                String targetCmd = inputArgs[1];
+
+                if (builtins.contains(targetCmd)) {
+                    System.out.println(targetCmd + " is a shell builtin");
+                } else {
+                    String path = getPath(targetCmd);
+                    if (path != null) {
+                        System.out.println(targetCmd + " is " + path);
+                    } else {
+                        System.out.println(targetCmd + ": not found");
+                    }
+                }
+            } 
+            // 4. Handle External Programs
+            else {
+                String path = getPath(command);
+                if (path != null) {
+                    try {
+                        // ProcessBuilder takes the entire array/list of arguments
+                        ProcessBuilder pb = new ProcessBuilder(inputArgs);
+                        
+                        // This mirrors the sub-process stdout/stderr directly to your shell's console
+                        pb.inheritIO(); 
+                        
+                        Process process = pb.start();
+                        process.waitFor(); // Wait for the external program to finish
+                    } catch (Exception e) {
+                        System.out.println("Error executing command: " + e.getMessage());
+                    }
+                } else {
+                    System.out.println(command + ": command not found");
+                }
+            }
+        }
+    }
+
+    // Helper method to look up a command in the system PATH
+    private static String getPath(String command) {
         String pathEnv = System.getenv("PATH");
-        String[] paths = pathEnv.split(File.pathSeparator);
+        if (pathEnv == null) return null;
 
-        for (String dir : paths) {
+        // Paths are separated by ":" on Unix/macOS and ";" on Windows
+        String delimiter = System.getProperty("os.name").toLowerCase().contains("win") ? ";" : ":";
+        String[] directories = pathEnv.split(delimiter);
+
+        for (String dir : directories) {
             File file = new File(dir, command);
-
             if (file.exists() && file.isFile() && file.canExecute()) {
                 return file.getAbsolutePath();
             }
         }
-
         return null;
-    }
-
-    public static void main(String[] args) throws Exception {
-        Scanner scanner = new Scanner(System.in);
-
-        while (true) {
-            System.out.print("$ ");
-            System.out.flush();
-
-            if (!scanner.hasNextLine()) {
-                break;
-            }
-
-            String input = scanner.nextLine();
-
-            if (input.equals("exit")) {
-                break;
-            }
-
-            if (input.startsWith("echo ")) {
-                System.out.println(input.substring(5));
-                continue;
-            }
-
-            if (input.startsWith("type ")) {
-                String cmd = input.substring(5);
-
-                if (cmd.equals("echo") || cmd.equals("exit") || cmd.equals("type")) {
-                    System.out.println(cmd + " is a shell builtin");
-                    continue;
-                }
-
-                String executable = findExecutable(cmd);
-
-                if (executable != null) {
-                    System.out.println(cmd + " is " + executable);
-                } else {
-                    System.out.println(cmd + ": not found");
-                }
-
-                continue;
-            }
-
-            String[] parts = input.split(" ");
-            String executable = findExecutable(parts[0]);
-
-            if (executable != null) {
-                List<String> command = new ArrayList<>();
-                command.add(executable);
-                command.addAll(Arrays.asList(parts).subList(1, parts.length));
-
-                Process process = new ProcessBuilder(command)
-                        .redirectErrorStream(true)
-                        .start();
-
-                try (BufferedReader reader = new BufferedReader(
-                        new InputStreamReader(process.getInputStream()))) {
-
-                    String line;
-                    while ((line = reader.readLine()) != null) {
-                        System.out.println(line);
-                    }
-                }
-
-                process.waitFor();
-            } else {
-                System.out.println(input + ": command not found");
-            }
-        }
     }
 }
