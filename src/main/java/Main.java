@@ -21,7 +21,7 @@ public class Main {
                 continue;
             }
 
-            // Using your custom parser instead of .split()
+            // Using our updated backslash-aware command parser
             List<String> inputArgs = parseCommand(input);
             if (inputArgs.isEmpty()) {
                 continue;
@@ -107,16 +107,25 @@ public class Main {
         }
     }
 
-    // Your custom quote-aware command parser
+    // Upgraded quote and backslash-aware command parser
     private static List<String> parseCommand(String input) {
         List<String> args = new ArrayList<>();
         StringBuilder current = new StringBuilder();
 
         boolean inDoubleQuotes = false;
         boolean inSingleQuotes = false;
+        boolean isEscaped = false; // Tracks if the current character is being escaped by a backslash
 
         for (int i = 0; i < input.length(); i++) {
             char ch = input.charAt(i);
+
+            // If the previous character was an unquoted backslash, 
+            // treat this current character purely as a literal value.
+            if (isEscaped) {
+                current.append(ch);
+                isEscaped = false; // Reset escaping state immediately
+                continue;
+            }
 
             // 1. If we are in double quotes, look only for the closing double quote
             if (inDoubleQuotes) {
@@ -136,12 +145,14 @@ public class Main {
             }
             // 3. If we are NOT inside any quotes
             else {
-                if (ch == '"') {
+                if (ch == '\\') {
+                    isEscaped = true; // Set escape flag; skips adding the backslash itself
+                } else if (ch == '"') {
                     inDoubleQuotes = true; // Open double quotes
                 } else if (ch == '\'') {
                     inSingleQuotes = true; // Open single quotes
                 } else if (Character.isWhitespace(ch)) {
-                    // Space separates arguments only when unquoted
+                    // Space separates arguments only when unquoted and unescaped
                     if (current.length() > 0) {
                         args.add(current.toString());
                         current.setLength(0);
