@@ -26,21 +26,34 @@ public class Main {
                 continue;
             }
 
-            int pipeIndex = -1;
-            for (int i = 0; i < inputArgs.size(); i++) {
-                if (inputArgs.get(i).equals("|")) {
-                    pipeIndex = i;
+            // Check if pipeline character '|' exists anywhere in the command
+            boolean hasPipe = false;
+            for (String arg : inputArgs) {
+                if (arg.equals("|")) {
+                    hasPipe = true;
                     break;
                 }
             }
 
-            if (pipeIndex != -1) {
-                List<String> firstCmdArgs = inputArgs.subList(0, pipeIndex);
-                List<String> secondCmdArgs = inputArgs.subList(pipeIndex + 1, inputArgs.size());
-                handlePipeline(firstCmdArgs, secondCmdArgs, originalOut, originalErr);
+            if (hasPipe) {
+                // Split all pipeline stages separated by '|'
+                List<List<String>> pipelineStages = new ArrayList<>();
+                List<String> currentStage = new ArrayList<>();
+                for (String arg : inputArgs) {
+                    if (arg.equals("|")) {
+                        pipelineStages.add(currentStage);
+                        currentStage = new ArrayList<>();
+                    } else {
+                        currentStage.add(arg);
+                    }
+                }
+                pipelineStages.add(currentStage);
+
+                handleMultiPipeline(pipelineStages, originalOut, originalErr);
                 continue;
             }
 
+            // --- STANDARD REDIRECTION LOGIC ---
             String redirectOutFile = null;
             String redirectErrFile = null;
             boolean appendOut = false; 
@@ -218,36 +231,36 @@ public class Main {
         }
     }
 
-    private static void handlePipeline(List<String> firstCmd, List<String> secondCmd, PrintStream origOut, PrintStream origErr) {
-        if (firstCmd.isEmpty() || secondCmd.isEmpty()) return;
-
-        boolean firstIsBuiltin = builtins.contains(firstCmd.get(0));
-        boolean secondIsBuiltin = builtins.contains(secondCmd.get(0));
-
-        String path1 = firstIsBuiltin ? "" : getPath(firstCmd.get(0));
-        String path2 = secondIsBuiltin ? "" : getPath(secondCmd.get(0));
-
-        if (!firstIsBuiltin && path1 == null) {
-            System.out.println(firstCmd.get(0) + ": command not found");
-            return;
-        }
-        if (!secondIsBuiltin && path2 == null) {
-            System.out.println(secondCmd.get(0) + ": command not found");
-            return;
+    private static void handleMultiPipeline(List<List<String>> stages, PrintStream origOut, PrintStream origErr) {
+        int numStages = stages.size();
+        
+        // Safety validation checks
+        boolean allExternal = true;
+        for (List<String> stage : stages) {
+            if (stage.isEmpty()) return;
+            String cmd = stage.get(0);
+            if (builtins.contains(cmd)) {
+                allExternal = false;
+            } else if (getPath(cmd) == null) {
+                System.out.println(cmd + ": command not found");
+                return;
+            }
         }
 
-        if (!firstIsBuiltin && !secondIsBuiltin) {
+        // If every single stage is an external executable, use the robust native ProcessBuilder pipeline
+        if (allExternal) {
             try {
-                ProcessBuilder pb1 = new ProcessBuilder(firstCmd).directory(new File(currentDir));
-                ProcessBuilder pb2 = new ProcessBuilder(secondCmd).directory(new File(currentDir));
-                
-                pb1.redirectInput(ProcessBuilder.Redirect.INHERIT);
-                pb1.redirectError(ProcessBuilder.Redirect.INHERIT);
-                pb2.redirectOutput(ProcessBuilder.Redirect.INHERIT);
-                pb2.redirectError(ProcessBuilder.Redirect.INHERIT);
+                List<ProcessBuilder> pbs = new ArrayList<>();
+                for (List<String> stage : stages) {
+                    ProcessBuilder pb = new ProcessBuilder(stage).directory(new File(currentDir));
+                    pb.redirectError(ProcessBuilder.Redirect.INHERIT);
+                    pbs.add(pb);
+                }
+                pbs.get(0).redirectInput(ProcessBuilder.Redirect.INHERIT);
+                pbs.get(pbs.size() - 1).redirectOutput(ProcessBuilder.Redirect.INHERIT);
 
-                List<Process> pipeline = ProcessBuilder.startPipeline(Arrays.asList(pb1, pb2));
-                for (Process p : pipeline) {
+                List<Process> processes = ProcessBuilder.startPipeline(pbs);
+                for (Process p : processes) {
                     p.waitFor();
                 }
             } catch (Exception e) {
@@ -256,76 +269,110 @@ public class Main {
             return;
         }
 
+        // Hybrid Piped IO Architecture supporting arbitrary number of stages with mixed builtins
         try {
-            PipedOutputStream pipeOut = new PipedOutputStream();
-            PipedInputStream pipeIn = new PipedInputStream(pipeOut);
+            List<PipedOutputStream> pipeOutputs = new ArrayList<>();
+            List<PipedInputStream> pipeInputs = new ArrayList<>();
+            
+            for (int i = 0; i < numStages - 1; i++) {
+                PipedOutputStream out = new PipedOutputStream();
+                PipedInputStream in = new PipedInputStream(out);
+                pipeOutputs.add(out);
+                pipeInputs.add(in);
+            }
 
-            Thread firstThread = new Thread(() -> {
-                PrintStream previousOut = System.out;
-                try {
-                    if (firstIsBuiltin) {
-                        System.setOut(new PrintStream(pipeOut, true));
-                        executeCommand(firstCmd, null, null, false, false);
-                    } else {
-                        ProcessBuilder pb1 = new ProcessBuilder(firstCmd);
-                        pb1.directory(new File(currentDir));
-                        pb1.redirectInput(ProcessBuilder.Redirect.INHERIT);
-                        pb1.redirectError(ProcessBuilder.Redirect.INHERIT);
-                        Process p1 = pb1.start();
-                        
-                        try (InputStream is = p1.getInputStream()) {
-                            byte[] buffer = new byte[1024];
-                            int bytesRead;
-                            while ((bytesRead = is.read(buffer)) != -1) {
-                                pipeOut.write(buffer, 0, bytesRead);
-                                pipeOut.flush();
-                            }
+            List<Thread> threads = new ArrayList<>();
+
+            for (int i = 0; i < numStages; i++) {
+                final int index = i;
+                List<String> currentStage = stages.get(index);
+                boolean isBuiltin = builtins.contains(currentStage.get(0));
+
+                Thread stageThread = new Thread(() -> {
+                    PrintStream previousOut = System.out;
+                    InputStream previousIn = System.in;
+                    try {
+                        // Connect Inputs
+                        if (index > 0) {
+                            System.setIn(pipeInputs.get(index - 1));
                         }
-                        p1.waitFor();
-                    }
-                } catch (Exception e) {
-                } finally {
-                    try { pipeOut.close(); } catch (IOException io) {}
-                    System.setOut(previousOut);
-                }
-            });
-
-            Thread secondThread = new Thread(() -> {
-                InputStream previousIn = System.in;
-                try {
-                    if (secondIsBuiltin) {
-                        System.setIn(pipeIn);
-                        executeCommand(secondCmd, null, null, false, false);
-                    } else {
-                        ProcessBuilder pb2 = new ProcessBuilder(secondCmd);
-                        pb2.directory(new File(currentDir));
-                        pb2.redirectOutput(ProcessBuilder.Redirect.INHERIT);
-                        pb2.redirectError(ProcessBuilder.Redirect.INHERIT);
-                        
-                        Process p2 = pb2.start();
-
-                        try (OutputStream os = p2.getOutputStream()) {
-                            byte[] buffer = new byte[1024];
-                            int bytesRead;
-                            while ((bytesRead = pipeIn.read(buffer)) != -1) {
-                                os.write(buffer, 0, bytesRead);
-                                os.flush();
-                            }
+                        // Connect Outputs
+                        if (index < numStages - 1) {
+                            System.setOut(new PrintStream(pipeOutputs.get(index), true));
+                        } else {
+                            System.setOut(origOut);
                         }
-                        p2.waitFor();
+
+                        if (isBuiltin) {
+                            executeCommand(currentStage, null, null, false, false);
+                        } else {
+                            ProcessBuilder pb = new ProcessBuilder(currentStage);
+                            pb.directory(new File(currentDir));
+                            pb.redirectError(ProcessBuilder.Redirect.INHERIT);
+
+                            if (index == 0) {
+                                pb.redirectInput(ProcessBuilder.Redirect.INHERIT);
+                            }
+                            if (index == numStages - 1) {
+                                pb.redirectOutput(ProcessBuilder.Redirect.INHERIT);
+                            }
+
+                            Process p = pb.start();
+
+                            // Thread pump to read input from predecessor pipeline state
+                            if (index > 0) {
+                                Thread inputPump = new Thread(() -> {
+                                    try (InputStream pi = pipeInputs.get(index - 1);
+                                         OutputStream os = p.getOutputStream()) {
+                                        byte[] buffer = new byte[1024];
+                                        int read;
+                                        while ((read = pi.read(buffer)) != -1) {
+                                            os.write(buffer, 0, read);
+                                            os.flush();
+                                        }
+                                    } catch (IOException e) {}
+                                });
+                                inputPump.start();
+                            }
+
+                            // Thread pump to write output into the successor pipeline state
+                            if (index < numStages - 1) {
+                                try (InputStream is = p.getInputStream();
+                                     PipedOutputStream po = pipeOutputs.get(index)) {
+                                    byte[] buffer = new byte[1024];
+                                    int read;
+                                    while ((read = is.read(buffer)) != -1) {
+                                        po.write(buffer, 0, read);
+                                        po.flush();
+                                    }
+                                }
+                            }
+
+                            p.waitFor();
+                        }
+                    } catch (Exception e) {
+                    } finally {
+                        // Safe cleanup and channel closures
+                        if (index < numStages - 1) {
+                            try { pipeOutputs.get(index).close(); } catch (IOException io) {}
+                        }
+                        if (index > 0) {
+                            try { pipeInputs.get(index - 1).close(); } catch (IOException io) {}
+                        }
+                        System.setOut(previousOut);
+                        System.setIn(previousIn);
                     }
-                } catch (Exception e) {
-                } finally {
-                    try { pipeIn.close(); } catch (IOException io) {}
-                    System.setIn(previousIn);
-                }
-            });
+                });
+                threads.add(stageThread);
+            }
 
-            firstThread.start();
-            secondThread.start();
-
-            firstThread.join();
-            secondThread.join();
+            // Fire up and coordinate concurrent stream executors
+            for (Thread t : threads) {
+                t.start();
+            }
+            for (Thread t : threads) {
+                t.join();
+            }
 
         } catch (Exception e) {
             System.out.println("Error executing pipeline: " + e.getMessage());
