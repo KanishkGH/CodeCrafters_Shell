@@ -29,13 +29,14 @@ public class Main {
             // --- REDIRECTION LOGIC ---
             String redirectOutFile = null;
             String redirectErrFile = null;
-            boolean appendOut = false; // Tracks whether to overwrite (false) or append (true)
+            boolean appendOut = false; 
+            boolean appendErr = false; // Tracks whether to append standard error
             int redirectIndex = -1;
 
             for (int i = 0; i < inputArgs.size(); i++) {
                 String arg = inputArgs.get(i);
                 
-                // Check for stdout overwrite
+                // Stdout Overwrite
                 if (arg.equals(">") || arg.equals("1>")) {
                     if (i + 1 < inputArgs.size()) {
                         redirectOutFile = inputArgs.get(i + 1);
@@ -44,7 +45,7 @@ public class Main {
                         break;
                     }
                 } 
-                // Check for stdout append
+                // Stdout Append
                 else if (arg.equals(">>") || arg.equals("1>>")) {
                     if (i + 1 < inputArgs.size()) {
                         redirectOutFile = inputArgs.get(i + 1);
@@ -53,10 +54,20 @@ public class Main {
                         break;
                     }
                 }
-                // Check for stderr overwrite
+                // Stderr Overwrite
                 else if (arg.equals("2>")) {
                     if (i + 1 < inputArgs.size()) {
                         redirectErrFile = inputArgs.get(i + 1);
+                        appendErr = false;
+                        redirectIndex = i;
+                        break;
+                    }
+                }
+                // Stderr Append
+                else if (arg.equals("2>>")) {
+                    if (i + 1 < inputArgs.size()) {
+                        redirectErrFile = inputArgs.get(i + 1);
+                        appendErr = true;
                         redirectIndex = i;
                         break;
                     }
@@ -85,7 +96,6 @@ public class Main {
                 if (file.getParentFile() != null) {
                     file.getParentFile().mkdirs();
                 }
-                // Pass appendOut variable into FileOutputStream constructor
                 System.setOut(new PrintStream(new FileOutputStream(file, appendOut)));
             }
 
@@ -97,7 +107,7 @@ public class Main {
                 if (file.getParentFile() != null) {
                     file.getParentFile().mkdirs();
                 }
-                System.setErr(new PrintStream(new FileOutputStream(file, false)));
+                System.setErr(new PrintStream(new FileOutputStream(file, appendErr)));
             }
 
             try {
@@ -160,11 +170,11 @@ public class Main {
                             ProcessBuilder pb = new ProcessBuilder(commandArgs);
                             pb.directory(new File(currentDir));
                             
+                            // Stdout routing context
                             if (redirectOutFile != null) {
                                 File file = new File(redirectOutFile);
                                 if (!file.isAbsolute()) file = new File(currentDir, redirectOutFile);
                                 
-                                // Select standard or append redirect depending on operator flag
                                 if (appendOut) {
                                     pb.redirectOutput(ProcessBuilder.Redirect.appendTo(file));
                                 } else {
@@ -174,10 +184,16 @@ public class Main {
                                 pb.redirectOutput(ProcessBuilder.Redirect.INHERIT);
                             }
 
+                            // Stderr routing context
                             if (redirectErrFile != null) {
                                 File file = new File(redirectErrFile);
                                 if (!file.isAbsolute()) file = new File(currentDir, redirectErrFile);
-                                pb.redirectError(ProcessBuilder.Redirect.to(file));
+                                
+                                if (appendErr) {
+                                    pb.redirectError(ProcessBuilder.Redirect.appendTo(file));
+                                } else {
+                                    pb.redirectError(ProcessBuilder.Redirect.to(file));
+                                }
                             } else {
                                 pb.redirectError(ProcessBuilder.Redirect.INHERIT);
                             }
