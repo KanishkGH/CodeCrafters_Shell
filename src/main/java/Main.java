@@ -136,13 +136,14 @@ public class Main {
                 }
             }
             // 2. If we are in single quotes, look only for the closing single quote
-            else if (inSingleQuotes) {
-                if (ch == '\'') {
-                    inSingleQuotes = false; // Close single quotes
-                } else {
-                    current.append(ch);
-                }
-            }
+            // 2. If we are in single quotes, look only for the closing single quote
+else if (inSingleQuotes) {
+    if (ch == '\'') {
+        inSingleQuotes = false; // Close single quotes
+    } else {
+        current.append(ch); // Everything else is treated as a literal character!
+    }
+}
             // 3. If we are NOT inside any quotes
             else {
                 if (ch == '\\') {
