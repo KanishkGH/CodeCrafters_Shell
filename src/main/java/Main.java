@@ -29,17 +29,32 @@ public class Main {
             // --- REDIRECTION LOGIC ---
             String redirectOutFile = null;
             String redirectErrFile = null;
+            boolean appendOut = false; // Tracks whether to overwrite (false) or append (true)
             int redirectIndex = -1;
 
             for (int i = 0; i < inputArgs.size(); i++) {
                 String arg = inputArgs.get(i);
+                
+                // Check for stdout overwrite
                 if (arg.equals(">") || arg.equals("1>")) {
                     if (i + 1 < inputArgs.size()) {
                         redirectOutFile = inputArgs.get(i + 1);
+                        appendOut = false;
                         redirectIndex = i;
                         break;
                     }
-                } else if (arg.equals("2>")) {
+                } 
+                // Check for stdout append
+                else if (arg.equals(">>") || arg.equals("1>>")) {
+                    if (i + 1 < inputArgs.size()) {
+                        redirectOutFile = inputArgs.get(i + 1);
+                        appendOut = true;
+                        redirectIndex = i;
+                        break;
+                    }
+                }
+                // Check for stderr overwrite
+                else if (arg.equals("2>")) {
                     if (i + 1 < inputArgs.size()) {
                         redirectErrFile = inputArgs.get(i + 1);
                         redirectIndex = i;
@@ -61,7 +76,7 @@ public class Main {
 
             String command = commandArgs.get(0);
 
-            // Set up Redirections for Builtin Commands (and ensure files are created upfront)
+            // Set up Redirections for Builtin Commands
             if (redirectOutFile != null) {
                 File file = new File(redirectOutFile);
                 if (!file.isAbsolute()) {
@@ -70,7 +85,8 @@ public class Main {
                 if (file.getParentFile() != null) {
                     file.getParentFile().mkdirs();
                 }
-                System.setOut(new PrintStream(new FileOutputStream(file, false)));
+                // Pass appendOut variable into FileOutputStream constructor
+                System.setOut(new PrintStream(new FileOutputStream(file, appendOut)));
             }
 
             if (redirectErrFile != null) {
@@ -81,7 +97,6 @@ public class Main {
                 if (file.getParentFile() != null) {
                     file.getParentFile().mkdirs();
                 }
-                // Redirect System.err for builtins, which also forces file creation
                 System.setErr(new PrintStream(new FileOutputStream(file, false)));
             }
 
@@ -148,7 +163,13 @@ public class Main {
                             if (redirectOutFile != null) {
                                 File file = new File(redirectOutFile);
                                 if (!file.isAbsolute()) file = new File(currentDir, redirectOutFile);
-                                pb.redirectOutput(ProcessBuilder.Redirect.to(file));
+                                
+                                // Select standard or append redirect depending on operator flag
+                                if (appendOut) {
+                                    pb.redirectOutput(ProcessBuilder.Redirect.appendTo(file));
+                                } else {
+                                    pb.redirectOutput(ProcessBuilder.Redirect.to(file));
+                                }
                             } else {
                                 pb.redirectOutput(ProcessBuilder.Redirect.INHERIT);
                             }
@@ -173,7 +194,6 @@ public class Main {
                     }
                 }
             } finally {
-                // Restore original system output streams completely
                 if (redirectOutFile != null) {
                     System.out.flush();
                     System.setOut(originalOut);
@@ -230,21 +250,21 @@ public class Main {
                 }
             }
             else {
-    if (ch == '\\') {
-        isEscaped = true; 
-    } else if (ch == '"') {
-        inDoubleQuotes = true; 
-    } else if (ch == '\'') {
-        inSingleQuotes = true; 
-    } else if (Character.isWhitespace(ch)) {
-        if (current.length() > 0) {
-            args.add(current.toString());
-            current.setLength(0);
-        }
-    } else {
-        current.append(ch);
-    }
-}
+                if (ch == '\\') {
+                    isEscaped = true; 
+                } else if (ch == '"') {
+                    inDoubleQuotes = true; 
+                } else if (ch == '\'') {
+                    inSingleQuotes = true; 
+                } else if (Character.isWhitespace(ch)) {
+                    if (current.length() > 0) {
+                        args.add(current.toString());
+                        current.setLength(0);
+                    }
+                } else {
+                    current.append(ch);
+                }
+            }
         }
 
         if (current.length() > 0) {
