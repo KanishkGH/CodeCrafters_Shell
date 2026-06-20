@@ -8,6 +8,7 @@ public class Main {
         Scanner scanner = new Scanner(System.in);
         Set<String> builtins = Set.of("exit", "echo", "type", "cd", "pwd");
         PrintStream originalOut = System.out;
+        PrintStream originalErr = System.err;
 
         while (true) {
             System.out.print("$ ");
@@ -26,14 +27,21 @@ public class Main {
             }
 
             // --- REDIRECTION LOGIC ---
-            String redirectFile = null;
+            String redirectOutFile = null;
+            String redirectErrFile = null;
             int redirectIndex = -1;
 
             for (int i = 0; i < inputArgs.size(); i++) {
                 String arg = inputArgs.get(i);
                 if (arg.equals(">") || arg.equals("1>")) {
                     if (i + 1 < inputArgs.size()) {
-                        redirectFile = inputArgs.get(i + 1);
+                        redirectOutFile = inputArgs.get(i + 1);
+                        redirectIndex = i;
+                        break;
+                    }
+                } else if (arg.equals("2>")) {
+                    if (i + 1 < inputArgs.size()) {
+                        redirectErrFile = inputArgs.get(i + 1);
                         redirectIndex = i;
                         break;
                     }
@@ -53,16 +61,28 @@ public class Main {
 
             String command = commandArgs.get(0);
 
-            // Set up redirection for Builtin Commands
-            if (redirectFile != null) {
-                File file = new File(redirectFile);
+            // Set up Redirections for Builtin Commands (and ensure files are created upfront)
+            if (redirectOutFile != null) {
+                File file = new File(redirectOutFile);
                 if (!file.isAbsolute()) {
-                    file = new File(currentDir, redirectFile);
+                    file = new File(currentDir, redirectOutFile);
                 }
                 if (file.getParentFile() != null) {
                     file.getParentFile().mkdirs();
                 }
                 System.setOut(new PrintStream(new FileOutputStream(file, false)));
+            }
+
+            if (redirectErrFile != null) {
+                File file = new File(redirectErrFile);
+                if (!file.isAbsolute()) {
+                    file = new File(currentDir, redirectErrFile);
+                }
+                if (file.getParentFile() != null) {
+                    file.getParentFile().mkdirs();
+                }
+                // Redirect System.err for builtins, which also forces file creation
+                System.setErr(new PrintStream(new FileOutputStream(file, false)));
             }
 
             try {
@@ -122,25 +142,26 @@ public class Main {
                     String path = getPath(command);
                     if (path != null) {
                         try {
-                            // FIX: Pass commandArgs directly so ProcessBuilder preserves 
-                            // the original command name as Arg #0
                             ProcessBuilder pb = new ProcessBuilder(commandArgs);
                             pb.directory(new File(currentDir));
                             
-                            if (redirectFile != null) {
-                                File file = new File(redirectFile);
-                                if (!file.isAbsolute()) {
-                                    file = new File(currentDir, redirectFile);
-                                }
-                                if (file.getParentFile() != null) {
-                                    file.getParentFile().mkdirs();
-                                }
+                            if (redirectOutFile != null) {
+                                File file = new File(redirectOutFile);
+                                if (!file.isAbsolute()) file = new File(currentDir, redirectOutFile);
                                 pb.redirectOutput(ProcessBuilder.Redirect.to(file));
-                                pb.redirectError(ProcessBuilder.Redirect.INHERIT);
-                                pb.redirectInput(ProcessBuilder.Redirect.INHERIT);
                             } else {
-                                pb.inheritIO();
+                                pb.redirectOutput(ProcessBuilder.Redirect.INHERIT);
                             }
+
+                            if (redirectErrFile != null) {
+                                File file = new File(redirectErrFile);
+                                if (!file.isAbsolute()) file = new File(currentDir, redirectErrFile);
+                                pb.redirectError(ProcessBuilder.Redirect.to(file));
+                            } else {
+                                pb.redirectError(ProcessBuilder.Redirect.INHERIT);
+                            }
+
+                            pb.redirectInput(ProcessBuilder.Redirect.INHERIT);
                             
                             Process process = pb.start();
                             process.waitFor(); 
@@ -152,9 +173,14 @@ public class Main {
                     }
                 }
             } finally {
-                if (redirectFile != null) {
+                // Restore original system output streams completely
+                if (redirectOutFile != null) {
                     System.out.flush();
                     System.setOut(originalOut);
+                }
+                if (redirectErrFile != null) {
+                    System.err.flush();
+                    System.setErr(originalErr);
                 }
             }
         }
@@ -204,21 +230,21 @@ public class Main {
                 }
             }
             else {
-                if (ch == '\\') {
-                    isEscaped = true; 
-                } else if (ch == '"') {
-                    inDoubleQuotes = true; 
-                } else if (ch == '\'') {
-                    inSingleQuotes = true; 
-                } else if (Character.isWhitespace(ch)) {
-                    if (current.length() > 0) {
-                        args.add(current.toString());
-                        current.setLength(0);
-                    }
-                } else {
-                    current.append(ch);
-                }
-            }
+    if (ch == '\\') {
+        isEscaped = true; 
+    } else if (ch == '"') {
+        inDoubleQuotes = true; 
+    } else if (ch == '\'') {
+        inSingleQuotes = true; 
+    } else if (Character.isWhitespace(ch)) {
+        if (current.length() > 0) {
+            args.add(current.toString());
+            current.setLength(0);
+        }
+    } else {
+        current.append(ch);
+    }
+}
         }
 
         if (current.length() > 0) {
