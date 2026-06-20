@@ -26,17 +26,31 @@ public class Main {
                 continue;
             }
 
-            // --- REDIRECTION LOGIC ---
+            // Check for pipeline (|)
+            int pipeIndex = -1;
+            for (int i = 0; i < inputArgs.size(); i++) {
+                if (inputArgs.get(i).equals("|")) {
+                    pipeIndex = i;
+                    break;
+                }
+            }
+
+            if (pipeIndex != -1) {
+                List<String> firstCmdArgs = inputArgs.subList(0, pipeIndex);
+                List<String> secondCmdArgs = inputArgs.subList(pipeIndex + 1, inputArgs.size());
+                handlePipeline(firstCmdArgs, secondCmdArgs);
+                continue;
+            }
+
+            // --- STANDARD REDIRECTION LOGIC ---
             String redirectOutFile = null;
             String redirectErrFile = null;
             boolean appendOut = false; 
-            boolean appendErr = false; // Tracks whether to append standard error
+            boolean appendErr = false; 
             int redirectIndex = -1;
 
             for (int i = 0; i < inputArgs.size(); i++) {
                 String arg = inputArgs.get(i);
-                
-                // Stdout Overwrite
                 if (arg.equals(">") || arg.equals("1>")) {
                     if (i + 1 < inputArgs.size()) {
                         redirectOutFile = inputArgs.get(i + 1);
@@ -44,27 +58,21 @@ public class Main {
                         redirectIndex = i;
                         break;
                     }
-                } 
-                // Stdout Append
-                else if (arg.equals(">>") || arg.equals("1>>")) {
+                } else if (arg.equals(">>") || arg.equals("1>>")) {
                     if (i + 1 < inputArgs.size()) {
                         redirectOutFile = inputArgs.get(i + 1);
                         appendOut = true;
                         redirectIndex = i;
                         break;
                     }
-                }
-                // Stderr Overwrite
-                else if (arg.equals("2>")) {
+                } else if (arg.equals("2>")) {
                     if (i + 1 < inputArgs.size()) {
                         redirectErrFile = inputArgs.get(i + 1);
                         appendErr = false;
                         redirectIndex = i;
                         break;
                     }
-                }
-                // Stderr Append
-                else if (arg.equals("2>>")) {
+                } else if (arg.equals("2>>")) {
                     if (i + 1 < inputArgs.size()) {
                         redirectErrFile = inputArgs.get(i + 1);
                         appendErr = true;
@@ -87,7 +95,6 @@ public class Main {
 
             String command = commandArgs.get(0);
 
-            // Set up Redirections for Builtin Commands
             if (redirectOutFile != null) {
                 File file = new File(redirectOutFile);
                 if (!file.isAbsolute()) {
@@ -111,20 +118,16 @@ public class Main {
             }
 
             try {
-                // 1. Handle "exit"
                 if (command.equals("exit")) {
                     System.exit(0);
                 } 
-                // 2. Handle "echo"
                 else if (command.equals("echo")) {
                     List<String> echoArgs = commandArgs.subList(1, commandArgs.size());
                     System.out.println(String.join(" ", echoArgs));
                 } 
-                // 3. Handle "pwd"
                 else if (command.equals("pwd")) {
                     System.out.println(currentDir);
                 }
-                // 4. Handle "cd"
                 else if (command.equals("cd")) {
                     String targetPath = commandArgs.size() > 1 ? commandArgs.get(1) : "~";
                     
@@ -146,7 +149,6 @@ public class Main {
                         }
                     }
                 }
-                // 5. Handle "type"
                 else if (command.equals("type")) {
                     if (commandArgs.size() < 2) continue;
                     String targetCmd = commandArgs.get(1);
@@ -162,7 +164,6 @@ public class Main {
                         }
                     }
                 } 
-                // 6. Handle External Programs
                 else {
                     String path = getPath(command);
                     if (path != null) {
@@ -170,11 +171,9 @@ public class Main {
                             ProcessBuilder pb = new ProcessBuilder(commandArgs);
                             pb.directory(new File(currentDir));
                             
-                            // Stdout routing context
                             if (redirectOutFile != null) {
                                 File file = new File(redirectOutFile);
                                 if (!file.isAbsolute()) file = new File(currentDir, redirectOutFile);
-                                
                                 if (appendOut) {
                                     pb.redirectOutput(ProcessBuilder.Redirect.appendTo(file));
                                 } else {
@@ -184,11 +183,9 @@ public class Main {
                                 pb.redirectOutput(ProcessBuilder.Redirect.INHERIT);
                             }
 
-                            // Stderr routing context
                             if (redirectErrFile != null) {
                                 File file = new File(redirectErrFile);
                                 if (!file.isAbsolute()) file = new File(currentDir, redirectErrFile);
-                                
                                 if (appendErr) {
                                     pb.redirectError(ProcessBuilder.Redirect.appendTo(file));
                                 } else {
@@ -219,6 +216,63 @@ public class Main {
                     System.setErr(originalErr);
                 }
             }
+        }
+    }
+
+    private static void handlePipeline(List<String> firstCmd, List<String> secondCmd) {
+        if (firstCmd.isEmpty() || secondCmd.isEmpty()) return;
+
+        String path1 = getPath(firstCmd.get(0));
+        String path2 = getPath(secondCmd.get(0));
+
+        if (path1 == null) {
+            System.out.println(firstCmd.get(0) + ": command not found");
+            return;
+        }
+        if (path2 == null) {
+            System.out.println(secondCmd.get(0) + ": command not found");
+            return;
+        }
+
+        try {
+            ProcessBuilder pb1 = new ProcessBuilder(firstCmd);
+            ProcessBuilder pb2 = new ProcessBuilder(secondCmd);
+
+            pb1.directory(new File(currentDir));
+            pb2.directory(new File(currentDir));
+
+            pb1.redirectInput(ProcessBuilder.Redirect.INHERIT);
+            pb1.redirectError(ProcessBuilder.Redirect.INHERIT);
+
+            pb2.redirectOutput(ProcessBuilder.Redirect.INHERIT);
+            pb2.redirectError(ProcessBuilder.Redirect.INHERIT);
+
+            Process p1 = pb1.start();
+            Process p2 = pb2.start();
+
+            // Establish thread-based pipe connection to keep streaming alive actively
+            Thread pipeThread = new Thread(() -> {
+                try (InputStream input = p1.getInputStream();
+                     OutputStream output = p2.getOutputStream()) {
+                    byte[] buffer = new byte[4096];
+                    int bytesRead;
+                    while ((bytesRead = input.read(buffer)) != -1) {
+                        output.write(buffer, 0, bytesRead);
+                        output.flush();
+                    }
+                } catch (IOException e) {
+                    // Pipeline closure handled implicitly
+                }
+            });
+
+            pipeThread.start();
+
+            p1.waitFor();
+            p2.waitFor();
+            pipeThread.join();
+
+        } catch (Exception e) {
+            System.out.println("Error executing pipeline: " + e.getMessage());
         }
     }
 
