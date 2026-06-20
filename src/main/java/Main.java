@@ -2,12 +2,10 @@ import java.util.*;
 import java.io.*;
 
 public class Main {
-    // Keep track of the shell's current working directory state
     private static String currentDir = System.getProperty("user.dir");
 
     public static void main(String[] args) throws Exception {
         Scanner scanner = new Scanner(System.in);
-        // Updated builtins set to include 'cd' and 'pwd'
         Set<String> builtins = Set.of("exit", "echo", "type", "cd", "pwd");
 
         while (true) {
@@ -21,7 +19,6 @@ public class Main {
                 continue;
             }
 
-            // Using our updated backslash-aware command parser
             List<String> inputArgs = parseCommand(input);
             if (inputArgs.isEmpty()) {
                 continue;
@@ -53,13 +50,11 @@ public class Main {
                     }
                 } else {
                     File file = new File(targetPath);
-                    // Resolve relative paths based on our tracked directory
                     if (!file.isAbsolute()) {
                         file = new File(currentDir, targetPath);
                     }
                     
                     if (file.exists() && file.isDirectory()) {
-                        // getCanonicalPath evaluates "." and ".." accurately
                         currentDir = file.getCanonicalPath();
                     } else {
                         System.out.println("cd: " + targetPath + ": No such file or directory");
@@ -88,11 +83,7 @@ public class Main {
                 if (path != null) {
                     try {
                         ProcessBuilder pb = new ProcessBuilder(inputArgs);
-                        
-                        // Dynamically sets the environment context to our current directory state
                         pb.directory(new File(currentDir));
-                        
-                        // Inherit standard IO streams so the output prints to your shell
                         pb.inheritIO(); 
                         
                         Process process = pb.start();
@@ -107,53 +98,65 @@ public class Main {
         }
     }
 
-    // Upgraded quote and backslash-aware command parser
+    // Upgraded to handle selective backslash escaping inside double quotes
     private static List<String> parseCommand(String input) {
         List<String> args = new ArrayList<>();
         StringBuilder current = new StringBuilder();
 
         boolean inDoubleQuotes = false;
         boolean inSingleQuotes = false;
-        boolean isEscaped = false; // Tracks if the current character is being escaped by a backslash
+        boolean isEscaped = false; 
 
         for (int i = 0; i < input.length(); i++) {
             char ch = input.charAt(i);
 
-            // If the previous character was an unquoted backslash, 
-            // treat this current character purely as a literal value.
+            // Handle unquoted backslash escaping short-circuit
             if (isEscaped) {
                 current.append(ch);
-                isEscaped = false; // Reset escaping state immediately
+                isEscaped = false; 
                 continue;
             }
 
-            // 1. If we are in double quotes, look only for the closing double quote
+            // 1. Double Quotes Context
             if (inDoubleQuotes) {
-                if (ch == '"') {
-                    inDoubleQuotes = false; // Close double quotes
+                if (ch == '\\') {
+                    // Check if there's a character following the backslash
+                    if (i + 1 < input.length()) {
+                        char nextCh = input.charAt(i + 1);
+                        // Inside double quotes, only escape ", \, $, and `
+                        if (nextCh == '"' || nextCh == '\\' || nextCh == '$' || nextCh == '`') {
+                            current.append(nextCh);
+                            i++; // Skip processing the escaped character on the next iteration
+                        } else {
+                            // If it's anything else (like \n), treat the backslash literally
+                            current.append(ch);
+                        }
+                    } else {
+                        current.append(ch);
+                    }
+                } else if (ch == '"') {
+                    inDoubleQuotes = false; 
                 } else {
                     current.append(ch);
                 }
             }
-            // 2. If we are in single quotes, look only for the closing single quote
-            // 2. If we are in single quotes, look only for the closing single quote
-else if (inSingleQuotes) {
-    if (ch == '\'') {
-        inSingleQuotes = false; // Close single quotes
-    } else {
-        current.append(ch); // Everything else is treated as a literal character!
-    }
-}
-            // 3. If we are NOT inside any quotes
+            // 2. Single Quotes Context
+            else if (inSingleQuotes) {
+                if (ch == '\'') {
+                    inSingleQuotes = false; 
+                } else {
+                    current.append(ch);
+                }
+            }
+            // 3. Unquoted Context
             else {
                 if (ch == '\\') {
-                    isEscaped = true; // Set escape flag; skips adding the backslash itself
+                    isEscaped = true; 
                 } else if (ch == '"') {
-                    inDoubleQuotes = true; // Open double quotes
+                    inDoubleQuotes = true; 
                 } else if (ch == '\'') {
-                    inSingleQuotes = true; // Open single quotes
+                    inSingleQuotes = true; 
                 } else if (Character.isWhitespace(ch)) {
-                    // Space separates arguments only when unquoted and unescaped
                     if (current.length() > 0) {
                         args.add(current.toString());
                         current.setLength(0);
@@ -164,7 +167,6 @@ else if (inSingleQuotes) {
             }
         }
 
-        // Add the final argument if there is one remaining
         if (current.length() > 0) {
             args.add(current.toString());
         }
@@ -172,7 +174,6 @@ else if (inSingleQuotes) {
         return args;
     }
 
-    // Helper method to look up commands in the system PATH
     private static String getPath(String command) {
         String pathEnv = System.getenv("PATH");
         if (pathEnv == null) return null;
