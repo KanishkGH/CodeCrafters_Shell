@@ -10,12 +10,14 @@ public class Main {
         long pid;
         String command;
         String status;
+        Process process;
 
-        Job(int id, long pid, String command, String status) {
+        Job(int id, long pid, String command, String status, Process process) {
             this.id = id;
             this.pid = pid;
             this.command = command;
             this.status = status;
+            this.process = process;
         }
     }
 
@@ -181,6 +183,17 @@ public class Main {
             System.out.println(currentDir);
         }
         else if (command.equals("jobs")) {
+            // Check process states before displaying
+            for (Job job : activeJobs) {
+                if (job.status.equals("Running") && !job.process.isAlive()) {
+                    job.status = "Done";
+                    // If the command originally saved included the trailing ampersand, strip it out for Done status
+                    if (job.command.endsWith(" &")) {
+                        job.command = job.command.substring(0, job.command.length() - 2);
+                    }
+                }
+            }
+
             int size = activeJobs.size();
             for (int i = 0; i < size; i++) {
                 Job job = activeJobs.get(i);
@@ -193,6 +206,9 @@ public class Main {
                 String paddedStatus = String.format("%-24s", job.status);
                 System.out.println("[" + job.id + "]" + marker + "  " + paddedStatus + job.command);
             }
+
+            // Remove jobs that have transitionally fully completed out of the list so subsequent iterations don't view them
+            activeJobs.removeIf(job -> job.status.equals("Done"));
         }
         else if (command.equals("cd")) {
             String targetPath = args.size() > 1 ? args.get(1) : "~";
@@ -266,7 +282,7 @@ public class Main {
                 if (isBackground) {
                     long pid = process.pid();
                     System.out.println("[" + nextJobId + "] " + pid);
-                    activeJobs.add(new Job(nextJobId, pid, originalCommand, "Running"));
+                    activeJobs.add(new Job(nextJobId, pid, originalCommand, "Running", process));
                     nextJobId++;
                 } else {
                     process.waitFor();
