@@ -3,7 +3,8 @@ import java.io.*;
 
 public class Main {
     private static String currentDir = System.getProperty("user.dir");
-    private static final Set<String> builtins = Set.of("exit", "echo", "type", "cd", "pwd");
+    // Added "jobs" to the builtins set
+    private static final Set<String> builtins = Set.of("exit", "echo", "type", "cd", "pwd", "jobs");
 
     public static void main(String[] args) throws Exception {
         Scanner scanner = new Scanner(System.in);
@@ -26,7 +27,6 @@ public class Main {
                 continue;
             }
 
-            // Check if pipeline character '|' exists anywhere in the command
             boolean hasPipe = false;
             for (String arg : inputArgs) {
                 if (arg.equals("|")) {
@@ -36,7 +36,6 @@ public class Main {
             }
 
             if (hasPipe) {
-                // Split all pipeline stages separated by '|'
                 List<List<String>> pipelineStages = new ArrayList<>();
                 List<String> currentStage = new ArrayList<>();
                 for (String arg : inputArgs) {
@@ -53,7 +52,6 @@ public class Main {
                 continue;
             }
 
-            // --- STANDARD REDIRECTION LOGIC ---
             String redirectOutFile = null;
             String redirectErrFile = null;
             boolean appendOut = false; 
@@ -156,6 +154,9 @@ public class Main {
         else if (command.equals("pwd")) {
             System.out.println(currentDir);
         }
+        else if (command.equals("jobs")) {
+            // Empty implementation as required for this stage
+        }
         else if (command.equals("cd")) {
             String targetPath = args.size() > 1 ? args.get(1) : "~";
             
@@ -234,7 +235,6 @@ public class Main {
     private static void handleMultiPipeline(List<List<String>> stages, PrintStream origOut, PrintStream origErr) {
         int numStages = stages.size();
         
-        // Safety validation checks
         boolean allExternal = true;
         for (List<String> stage : stages) {
             if (stage.isEmpty()) return;
@@ -247,7 +247,6 @@ public class Main {
             }
         }
 
-        // If every single stage is an external executable, use the robust native ProcessBuilder pipeline
         if (allExternal) {
             try {
                 List<ProcessBuilder> pbs = new ArrayList<>();
@@ -269,7 +268,6 @@ public class Main {
             return;
         }
 
-        // Hybrid Piped IO Architecture supporting arbitrary number of stages with mixed builtins
         try {
             List<PipedOutputStream> pipeOutputs = new ArrayList<>();
             List<PipedInputStream> pipeInputs = new ArrayList<>();
@@ -292,11 +290,9 @@ public class Main {
                     PrintStream previousOut = System.out;
                     InputStream previousIn = System.in;
                     try {
-                        // Connect Inputs
                         if (index > 0) {
                             System.setIn(pipeInputs.get(index - 1));
                         }
-                        // Connect Outputs
                         if (index < numStages - 1) {
                             System.setOut(new PrintStream(pipeOutputs.get(index), true));
                         } else {
@@ -319,7 +315,6 @@ public class Main {
 
                             Process p = pb.start();
 
-                            // Thread pump to read input from predecessor pipeline state
                             if (index > 0) {
                                 Thread inputPump = new Thread(() -> {
                                     try (InputStream pi = pipeInputs.get(index - 1);
@@ -335,7 +330,6 @@ public class Main {
                                 inputPump.start();
                             }
 
-                            // Thread pump to write output into the successor pipeline state
                             if (index < numStages - 1) {
                                 try (InputStream is = p.getInputStream();
                                      PipedOutputStream po = pipeOutputs.get(index)) {
@@ -352,7 +346,6 @@ public class Main {
                         }
                     } catch (Exception e) {
                     } finally {
-                        // Safe cleanup and channel closures
                         if (index < numStages - 1) {
                             try { pipeOutputs.get(index).close(); } catch (IOException io) {}
                         }
@@ -366,7 +359,6 @@ public class Main {
                 threads.add(stageThread);
             }
 
-            // Fire up and coordinate concurrent stream executors
             for (Thread t : threads) {
                 t.start();
             }
