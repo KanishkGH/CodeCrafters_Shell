@@ -1,5 +1,6 @@
 import java.util.*;
 import java.io.*;
+import java.util.concurrent.TimeUnit;
 
 public class Main {
     private static String currentDir = System.getProperty("user.dir");
@@ -183,12 +184,15 @@ public class Main {
             System.out.println(currentDir);
         }
         else if (command.equals("jobs")) {
-            // Reap exited processes seamlessly across all tracked references
+            // Give the OS processes a small window to flush exit states
             for (Job job : activeJobs) {
-                if (job.status.equals("Running") && !job.process.isAlive()) {
-                    job.status = "Done";
-                    if (job.command.endsWith(" &")) {
-                        job.command = job.command.substring(0, job.command.length() - 2);
+                if (job.status.equals("Running")) {
+                    job.process.waitFor(5, TimeUnit.MILLISECONDS);
+                    if (!job.process.isAlive()) {
+                        job.status = "Done";
+                        if (job.command.endsWith(" &")) {
+                            job.command = job.command.substring(0, job.command.length() - 2);
+                        }
                     }
                 }
             }
@@ -206,7 +210,6 @@ public class Main {
                 System.out.println("[" + job.id + "]" + marker + "  " + paddedStatus + job.command);
             }
 
-            // Purge and finalize cleanup allocations for subsequent runs 
             activeJobs.removeIf(job -> job.status.equals("Done"));
         }
         else if (command.equals("cd")) {
