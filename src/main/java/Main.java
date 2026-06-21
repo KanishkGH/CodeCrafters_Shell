@@ -183,11 +183,10 @@ public class Main {
             System.out.println(currentDir);
         }
         else if (command.equals("jobs")) {
-            // Check process states before displaying
+            // Reap exited processes seamlessly across all tracked references
             for (Job job : activeJobs) {
                 if (job.status.equals("Running") && !job.process.isAlive()) {
                     job.status = "Done";
-                    // If the command originally saved included the trailing ampersand, strip it out for Done status
                     if (job.command.endsWith(" &")) {
                         job.command = job.command.substring(0, job.command.length() - 2);
                     }
@@ -207,7 +206,7 @@ public class Main {
                 System.out.println("[" + job.id + "]" + marker + "  " + paddedStatus + job.command);
             }
 
-            // Remove jobs that have transitionally fully completed out of the list so subsequent iterations don't view them
+            // Purge and finalize cleanup allocations for subsequent runs 
             activeJobs.removeIf(job -> job.status.equals("Done"));
         }
         else if (command.equals("cd")) {
