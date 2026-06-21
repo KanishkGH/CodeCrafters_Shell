@@ -4,6 +4,24 @@ import java.io.*;
 public class Main {
     private static String currentDir = System.getProperty("user.dir");
     private static final Set<String> builtins = Set.of("exit", "echo", "type", "cd", "pwd", "jobs");
+    
+    // Class to track running background jobs
+    private static class Job {
+        int id;
+        long pid;
+        String command;
+        String status;
+
+        Job(int id, long pid, String command, String status) {
+            this.id = id;
+            this.pid = pid;
+            this.command = command;
+            this.status = status;
+        }
+    }
+
+    private static final List<Job> activeJobs = new ArrayList<>();
+    private static int nextJobId = 1;
 
     public static void main(String[] args) throws Exception {
         Scanner scanner = new Scanner(System.in);
@@ -134,7 +152,7 @@ public class Main {
             }
 
             try {
-                executeCommand(commandArgs, redirectOutFile, redirectErrFile, appendOut, appendErr, isBackground);
+                executeCommand(commandArgs, redirectOutFile, redirectErrFile, appendOut, appendErr, isBackground, input);
             } catch (Exception e) {
                 System.out.println("Error executing command: " + e.getMessage());
             } finally {
@@ -150,7 +168,7 @@ public class Main {
         }
     }
 
-    private static void executeCommand(List<String> args, String redirectOutFile, String redirectErrFile, boolean appendOut, boolean appendErr, boolean isBackground) throws Exception {
+    private static void executeCommand(List<String> args, String redirectOutFile, String redirectErrFile, boolean appendOut, boolean appendErr, boolean isBackground, String originalCommand) throws Exception {
         String command = args.get(0);
 
         if (command.equals("exit")) {
@@ -164,7 +182,11 @@ public class Main {
             System.out.println(currentDir);
         }
         else if (command.equals("jobs")) {
-            // Emulated placeholder shell builtin
+            for (Job job : activeJobs) {
+                // Formatting padding requirement: Status column padded to 24 spaces total
+                String paddedStatus = String.format("%-24s", job.status);
+                System.out.println("[" + job.id + "]+  " + paddedStatus + job.command);
+            }
         }
         else if (command.equals("cd")) {
             String targetPath = args.size() > 1 ? args.get(1) : "~";
@@ -237,7 +259,11 @@ public class Main {
 
                 if (isBackground) {
                     long pid = process.pid();
-                    System.out.println("[1] " + pid);
+                    System.out.println("[" + nextJobId + "] " + pid);
+                    
+                    // Store the active tracked job context matching original input layout
+                    activeJobs.add(new Job(nextJobId, pid, originalCommand, "Running"));
+                    nextJobId++;
                 } else {
                     process.waitFor();
                 }
@@ -315,7 +341,7 @@ public class Main {
                         }
 
                         if (isBuiltin) {
-                            executeCommand(currentStage, null, null, false, false, false);
+                            executeCommand(currentStage, null, null, false, false, false, "");
                         } else {
                             ProcessBuilder pb = new ProcessBuilder(currentStage);
                             pb.directory(new File(currentDir));
