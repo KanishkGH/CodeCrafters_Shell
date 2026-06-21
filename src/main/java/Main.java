@@ -31,6 +31,9 @@ public class Main {
         PrintStream originalErr = System.err;
 
         while (true) {
+            // Automatic prompt reaping right before printing the prompt
+            reapCompletedJobsOnPrompt();
+
             System.out.print("$ ");
             if (!scanner.hasNextLine()) {
                 break;
@@ -170,6 +173,59 @@ public class Main {
         }
     }
 
+    private static void updateJobStates() {
+        for (Job job : activeJobs) {
+            if (job.status.equals("Running")) {
+                try {
+                    job.process.waitFor(0, TimeUnit.MILLISECONDS);
+                } catch (InterruptedException e) {}
+                
+                if (!job.process.isAlive()) {
+                    job.status = "Done";
+                    if (job.command.endsWith(" &")) {
+                        job.command = job.command.substring(0, job.command.length() - 2);
+                    }
+                }
+            }
+        }
+    }
+
+    private static void reapCompletedJobsOnPrompt() {
+        List<Job> finishedThisTurn = new ArrayList<>();
+        
+        for (Job job : activeJobs) {
+            if (job.status.equals("Running")) {
+                try {
+                    job.process.waitFor(0, TimeUnit.MILLISECONDS);
+                } catch (InterruptedException e) {}
+                
+                if (!job.process.isAlive()) {
+                    job.status = "Done";
+                    if (job.command.endsWith(" &")) {
+                        job.command = job.command.substring(0, job.command.length() - 2);
+                    }
+                    finishedThisTurn.add(job);
+                }
+            }
+        }
+
+        if (!finishedThisTurn.isEmpty()) {
+            int totalSize = activeJobs.size();
+            for (Job job : finishedThisTurn) {
+                int i = activeJobs.indexOf(job);
+                char marker = ' ';
+                if (i == totalSize - 1) {
+                    marker = '+';
+                } else if (i == totalSize - 2) {
+                    marker = '-';
+                }
+                String paddedStatus = String.format("%-24s", job.status);
+                System.out.println("[" + job.id + "]" + marker + "  " + paddedStatus + job.command);
+            }
+            activeJobs.removeIf(job -> job.status.equals("Done"));
+        }
+    }
+
     private static void executeCommand(List<String> args, String redirectOutFile, String redirectErrFile, boolean appendOut, boolean appendErr, boolean isBackground, String originalCommand) throws Exception {
         String command = args.get(0);
 
@@ -184,18 +240,8 @@ public class Main {
             System.out.println(currentDir);
         }
         else if (command.equals("jobs")) {
-            // Give the OS processes a small window to flush exit states
-            for (Job job : activeJobs) {
-                if (job.status.equals("Running")) {
-                    job.process.waitFor(5, TimeUnit.MILLISECONDS);
-                    if (!job.process.isAlive()) {
-                        job.status = "Done";
-                        if (job.command.endsWith(" &")) {
-                            job.command = job.command.substring(0, job.command.length() - 2);
-                        }
-                    }
-                }
-            }
+            // Update statuses for all tracked background references synchronously
+            updateJobStates();
 
             int size = activeJobs.size();
             for (int i = 0; i < size; i++) {
@@ -210,6 +256,7 @@ public class Main {
                 System.out.println("[" + job.id + "]" + marker + "  " + paddedStatus + job.command);
             }
 
+            // Flush out completed tasks post-render inside full sequential list block
             activeJobs.removeIf(job -> job.status.equals("Done"));
         }
         else if (command.equals("cd")) {
