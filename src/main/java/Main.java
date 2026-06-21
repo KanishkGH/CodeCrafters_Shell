@@ -26,7 +26,6 @@ public class Main {
                 continue;
             }
 
-            // Check for background operator '&' at the very end
             boolean isBackground = false;
             if (inputArgs.get(inputArgs.size() - 1).equals("&")) {
                 isBackground = true;
