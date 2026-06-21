@@ -5,7 +5,6 @@ public class Main {
     private static String currentDir = System.getProperty("user.dir");
     private static final Set<String> builtins = Set.of("exit", "echo", "type", "cd", "pwd", "jobs");
     
-    // Class to track running background jobs
     private static class Job {
         int id;
         long pid;
@@ -182,10 +181,17 @@ public class Main {
             System.out.println(currentDir);
         }
         else if (command.equals("jobs")) {
-            for (Job job : activeJobs) {
-                // Formatting padding requirement: Status column padded to 24 spaces total
+            int size = activeJobs.size();
+            for (int i = 0; i < size; i++) {
+                Job job = activeJobs.get(i);
+                char marker = ' ';
+                if (i == size - 1) {
+                    marker = '+';
+                } else if (i == size - 2) {
+                    marker = '-';
+                }
                 String paddedStatus = String.format("%-24s", job.status);
-                System.out.println("[" + job.id + "]+  " + paddedStatus + job.command);
+                System.out.println("[" + job.id + "]" + marker + "  " + paddedStatus + job.command);
             }
         }
         else if (command.equals("cd")) {
@@ -260,8 +266,6 @@ public class Main {
                 if (isBackground) {
                     long pid = process.pid();
                     System.out.println("[" + nextJobId + "] " + pid);
-                    
-                    // Store the active tracked job context matching original input layout
                     activeJobs.add(new Job(nextJobId, pid, originalCommand, "Running"));
                     nextJobId++;
                 } else {
