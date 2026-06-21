@@ -3,7 +3,6 @@ import java.io.*;
 
 public class Main {
     private static String currentDir = System.getProperty("user.dir");
-    // Added "jobs" to the builtins set
     private static final Set<String> builtins = Set.of("exit", "echo", "type", "cd", "pwd", "jobs");
 
     public static void main(String[] args) throws Exception {
@@ -23,6 +22,17 @@ public class Main {
             }
 
             List<String> inputArgs = parseCommand(input);
+            if (inputArgs.isEmpty()) {
+                continue;
+            }
+
+            // Check for background operator '&' at the very end
+            boolean isBackground = false;
+            if (inputArgs.get(inputArgs.size() - 1).equals("&")) {
+                isBackground = true;
+                inputArgs = new ArrayList<>(inputArgs.subList(0, inputArgs.size() - 1));
+            }
+
             if (inputArgs.isEmpty()) {
                 continue;
             }
@@ -125,7 +135,7 @@ public class Main {
             }
 
             try {
-                executeCommand(commandArgs, redirectOutFile, redirectErrFile, appendOut, appendErr);
+                executeCommand(commandArgs, redirectOutFile, redirectErrFile, appendOut, appendErr, isBackground);
             } catch (Exception e) {
                 System.out.println("Error executing command: " + e.getMessage());
             } finally {
@@ -141,7 +151,7 @@ public class Main {
         }
     }
 
-    private static void executeCommand(List<String> args, String redirectOutFile, String redirectErrFile, boolean appendOut, boolean appendErr) throws Exception {
+    private static void executeCommand(List<String> args, String redirectOutFile, String redirectErrFile, boolean appendOut, boolean appendErr, boolean isBackground) throws Exception {
         String command = args.get(0);
 
         if (command.equals("exit")) {
@@ -155,7 +165,7 @@ public class Main {
             System.out.println(currentDir);
         }
         else if (command.equals("jobs")) {
-            // Empty implementation as required for this stage
+            // Emulated placeholder shell builtin
         }
         else if (command.equals("cd")) {
             String targetPath = args.size() > 1 ? args.get(1) : "~";
@@ -225,7 +235,13 @@ public class Main {
 
                 pb.redirectInput(ProcessBuilder.Redirect.INHERIT);
                 Process process = pb.start();
-                process.waitFor();
+
+                if (isBackground) {
+                    long pid = process.pid();
+                    System.out.println("[1] " + pid);
+                } else {
+                    process.waitFor();
+                }
             } else {
                 System.out.println(command + ": command not found");
             }
@@ -300,7 +316,7 @@ public class Main {
                         }
 
                         if (isBuiltin) {
-                            executeCommand(currentStage, null, null, false, false);
+                            executeCommand(currentStage, null, null, false, false, false);
                         } else {
                             ProcessBuilder pb = new ProcessBuilder(currentStage);
                             pb.directory(new File(currentDir));
